@@ -9,4 +9,4 @@ pep517==0.12.0
 pyparsing==3.0.9
 tomli==2.0.1
 Werkzeug==2.1.2
-python-dotenv==1.0.0
+spotipy==2.22.1

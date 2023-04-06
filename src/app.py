@@ -1,21 +1,54 @@
 from flask import Flask
-from dotenv import load_dotenv
-import os 
 
-load_dotenv()
+
+import spotipy
+from spotipy.oauth2 import SpotifyClientCredentials, SpotifyOAuth
 
 app = Flask(__name__)
 
-PLAYLIST_ID = ''
-load_dotenv()
-
 @app.route("/")
 def hello_world():
-    spotify_client_id = os.environ.get("spotifyClientId")
-    spotify_secret = os.environ.get("spotifySecret")
-    return "<p>userID= " + spotify_client_id + "; key = " + spotify_secret + "</p>"
+    sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials())
 
-@app.route("/songs", methods=['PUT', 'GET'])
-def add_song():
+    playlists = sp.user_playlists('spotify')
+    while playlists:
+        for i, playlist in enumerate(playlists['items']):
+            print("%4d %s %s" % (i + 1 + playlists['offset'], playlist['uri'],  playlist['name']))
+        if playlists['next']:
+            playlists = sp.next(playlists)
+        else:
+            playlists = None
+    return "<p></p>"
+
+@app.route("/playlists", methods=['GET'])
+def get_playlists():
+    scope = "playlist-read-private"
+
+    sp = spotipy.Spotify(auth_manager=SpotifyOAuth(scope=scope))
+
+    print("Attempting OAuth login")
+    playlists = sp.user_playlists('spotify')
+    print("Logged in")
+    while playlists:
+        for i, playlist in enumerate(playlists['items']):
+            print("%4d %s %s" % (i + 1 + playlists['offset'], playlist['uri'],  playlist['name']))
+        if playlists['next']:
+            playlists = sp.next(playlists)
+        else:
+            playlists = None
+    return ""
+
+@app.route("/playlists", methods=['POST'])
+def create_playlist():
     return "<p>UNDER CONSTRUCTION</p>"
+
+@app.route("/playlists/<playlist_id>/songs", methods=['GET'])
+def get_songs(playlist_id):
+    return "<p>UNDER CONSTRUCTION</p>"
+
+@app.route("/playlists/<playlist_id>/songs", methods=['PUT'])
+def add_song_to_playlist(playlist_id):
+    return "<p>UNDER CONSTRUCTION</p>"
+
+
     
