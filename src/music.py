@@ -1,12 +1,15 @@
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 import object_factory
+from music_type_definitions import *
+
+_PLAYLISTER_APP_USER_ID='31wrypfeq4b4b5imyxlm2izeihxa'
 
 class MusicProviderNotFoundException(Exception):
     """Exception for unrecognized Music Providers"""
     pass
 
-class MusicServiceProvider(object_factory.ObjectFactory):
+class MusicServiceFactory(object_factory.ObjectFactory):
     def get(self, service_id, **kwargs):
         return self.create(service_id, **kwargs)
 
@@ -20,49 +23,61 @@ class MusicService:
     def __init__(self) -> None:
         pass
     
-    def create_playlist(self, playlist_name):
+    def get_playlist(self, playlist_name: str) -> Playlist:
+        raise NotImplementedError("get_playlist not implemented")
+    
+    def get_playlists(self) -> list[Playlist]:
+        raise NotImplementedError("get_playlists not implemented")
+    
+    def create_playlist(self, playlist_name) -> Playlist:
         raise NotImplementedError("create_playlist not implemented")
     
-    def add_track_to_playlist(self, playlist, track):
+    def add_track_to_playlist(self, playlist_name, track_id) -> Track:
         raise NotImplementedError("add_song_to_playlist not implemented")
     
-    def add_tracks_to_playlist(self, playlist, tracks):
+    def add_tracks_to_playlist(self, playlist_id, tracks: list[Track]) -> list[Track]:
         for track in tracks:
-            self.add_track_to_playlist(playlist, track)
+            self.add_track_to_playlist(playlist_id, track.id)
     
 class SpotifyService(MusicService):
     
     def __init__(self) -> None:
         super().__init__()
 
-    def create_playlist(self, playlist_name: str):
-        print("creating playlist")
-        scope = "playlist-modify-private"
+    def get_playlists(self) -> list[Playlist]:
+        scope='playlist-read-collaborative'
         sp = spotipy.Spotify(auth_manager=SpotifyOAuth(scope=scope))
-        user_id = sp.current_user()['id']
 
-        resp = sp.user_playlist_create(user=user_id, name=playlist_name, public=False,
-                                collaborative=False)
-        print(str(resp))
+        query_response = sp.user_playlists(sp.current_user()['id'])
+        playlists = {}
+        while query_response:
+            for item in query_response['items']:
+                playlists[item['name']] = Playlist(id=item['id'], name=item['name'], 
+                                                owner_id=item['owner']['id'])
+            if query_response['next']:
+                query_response = self._sp.next(query_response)
+            else:
+                query_response = None
+        return playlists
+
+    def get_playlist(self, playlist_name: str) -> Playlist:
+        playlists = self.get_playlists()
+        return playlists.get(playlist_name)
+
+
+    def create_playlist(self, playlist_name: str) -> Playlist:
+        scope='playlist-modify-public'
+        sp = spotipy.Spotify(auth_manager=SpotifyOAuth(scope=scope))
+        resp = sp.user_playlist_create(user=_PLAYLISTER_APP_USER_ID, name=playlist_name, public=True)
         return resp
     
-    def add_track_to_playlist(self, playlist, track):
-        scope = "playlist-modify-private"
+    def add_track_to_playlist(self, playlist_name, track_id) -> Track:
+        scope='playlist-modify-public'
         sp = spotipy.Spotify(auth_manager=SpotifyOAuth(scope=scope))
-        user_id = sp.current_user()['id']
 
-        sp.playlist_add_items(user_id, playlist=playlist, items=[track])
-        tracks = sp.user_playlist_tracks(user_id, playlist=playlist)
-        track_list = []
-        while tracks:
-            for i, track in enumerate(tracks['items']):
-                track_list.append(track['track']['name'])
-            if tracks['next']:
-                tracks = sp.next(tracks)
-            else:
-                tracks = None
-        print(''.join(track_list))
-    
+        playlist_id = self.get_playlist(playlist_name=playlist_name).id
+        return sp.user_playlist_add_tracks(_PLAYLISTER_APP_USER_ID, playlist_id, tracks=[track_id])
+
 
 class SpotifyServiceBuilder:
     def __init__(self):
@@ -105,7 +120,7 @@ class TidalServiceBuilder:
             self._instance = TidalService()
         return self._instance
     
-services = MusicServiceProvider()
+services = MusicServiceFactory()
 services.register_builder('SPOTIFY', SpotifyServiceBuilder())
 services.register_builder('YOUTUBE', YoutubeServiceBuilder())
 services.register_builder('TIDAL', TidalServiceBuilder())

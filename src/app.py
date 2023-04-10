@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, request
 import music
 
 app = Flask(__name__)
@@ -7,22 +7,18 @@ app = Flask(__name__)
 def root():
     return ""
 
-@app.route("/playlists", methods=['GET'])
-def get_playlists():
-    # scope = "playlist-read-private"
-
-    # sp = spotipy.Spotify(auth_manager=SpotifyOAuth(scope=scope))
-    # user_id = sp.current_user()['id']
-
-    # playlists = sp.user_playlists(user_id)
-    # while playlists:
-    #     for i, playlist in enumerate(playlists['items']):
-    #         print("%4d %s %s" % (i + 1 + playlists['offset'], playlist['uri'],  playlist['name']))
-    #     if playlists['next']:
-    #         playlists = sp.next(playlists)
-    #     else:
-    #         playlists = None
-    return ""
+@app.route("/services/<service_name>/playlists/<playlist_name>", methods=['GET'])
+def get_playlist_by_name(service_name: str, playlist_name: str):
+    service: music.MusicService = music.services.get(service_name.upper())
+    response_code = 200
+    response_body = None
+    try:
+        response_body = service.get_playlist(playlist_name=playlist_name)._asdict()
+        print(response_body)
+    except:
+        response_code = 500
+        response_body = "Unable to find playlist. Internal server error"
+    return response_body, response_code
 
 @app.route("/services/<service_name>/playlists/<playlist_name>", methods=['POST'])
 def create_playlist(service_name: str, playlist_name):
@@ -50,12 +46,12 @@ def get_songs(service_name: str, playlist):
     #         tracks = None
     return "<p>" + '</p><p>'.join(track_list) + "</p>"
 
-@app.route("/services/<service_name>/playlists/<playlist>/track/<track>", methods=['PUT'])
-def add_track_to_playlist(service_name: str, playlist, track):
+@app.route("/services/<service_name>/playlists/<playlist_name>/tracks", methods=['POST'])
+def add_track_to_playlist(service_name: str, playlist_name):
 
     service: music.MusicService = music.services.get(service_name.upper())
 
-    service.add_track_to_playlist(playlist=playlist, track=track)
+    service.add_track_to_playlist(playlist_name=playlist_name, track_id=request.form['track_id'])
     return ""
 
 

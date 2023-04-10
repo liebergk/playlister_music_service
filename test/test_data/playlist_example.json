@@ -1,0 +1,15 @@
+{
+	'name': 'user created playlist',
+	'tracks': [
+		{
+			'artist': 'Led Zeppelin',
+			'album': 'Houses of the Holy',
+			'name': 'Over the Hills and Far Away'
+		},
+		{
+			'artist': 'The Beatles',
+			'album': 'Abbey Road'
+			'name': 'Something'
+		}
+	]
+}
