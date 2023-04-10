@@ -8,14 +8,13 @@ class Artist(NamedTuple):
 
 class Album(NamedTuple):
     id: str
-    artist: str
     name: str
 
 class Track(NamedTuple):
     id: str
     name: str
-    artist: Artist
-    album: Album
+    artist: Artist = None
+    album: Album = None
 
 class Playlist(NamedTuple):
     id: str

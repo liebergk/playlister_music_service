@@ -2,81 +2,134 @@ import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 import object_factory
 from music_type_definitions import *
+import os
 
-_PLAYLISTER_APP_USER_ID='31wrypfeq4b4b5imyxlm2izeihxa'
+_PLAYLISTER_APP_USER_ID = os.environ['PLAYLISTER_APP_USER_ID']
+
 
 class MusicProviderNotFoundException(Exception):
     """Exception for unrecognized Music Providers"""
     pass
 
+
 class MusicServiceFactory(object_factory.ObjectFactory):
     def get(self, service_id, **kwargs):
         return self.create(service_id, **kwargs)
 
+
 class MusicService:
     """
     MusicService represents the service providing music to a user. Such a 
-    service should be able to find and play tracks, organize playlists, and
+    service should be able to find artists and tracks, manage playlists, and
     otherwise help the user organizer their music in a consistent way across
-    platforms
+    platforms.
     """
+
     def __init__(self) -> None:
         pass
-    
-    def get_playlist(self, playlist_name: str) -> Playlist:
+
+    def get_playlist(self, playlist_name: str, get_tracks: bool) -> Playlist:
         raise NotImplementedError("get_playlist not implemented")
-    
+
     def get_playlists(self) -> list[Playlist]:
         raise NotImplementedError("get_playlists not implemented")
-    
+
     def create_playlist(self, playlist_name) -> Playlist:
         raise NotImplementedError("create_playlist not implemented")
-    
-    def add_track_to_playlist(self, playlist_name, track_id) -> Track:
-        raise NotImplementedError("add_song_to_playlist not implemented")
-    
-    def add_tracks_to_playlist(self, playlist_id, tracks: list[Track]) -> list[Track]:
-        for track in tracks:
-            self.add_track_to_playlist(playlist_id, track.id)
-    
+
+    def add_tracks_to_playlist(self, playlist_id, tracks) -> list[Track]:
+        raise NotImplementedError("add_tracks_to_playlist not implemented")
+
+
 class SpotifyService(MusicService):
-    
+
     def __init__(self) -> None:
         super().__init__()
 
+    def get_playlist(self, playlist_name: str, get_tracks=False) -> Playlist:
+        playlists = self.get_playlists()
+        playlist: Playlist = playlists.get(playlist_name)
+
+        if get_tracks:
+            playlist = playlist._replace(tracks=self._get_tracks_for_playlist(playlist))
+
+        return playlist
+    
     def get_playlists(self) -> list[Playlist]:
-        scope='playlist-read-collaborative'
+        scope = 'playlist-read-collaborative'
         sp = spotipy.Spotify(auth_manager=SpotifyOAuth(scope=scope))
 
         query_response = sp.user_playlists(sp.current_user()['id'])
         playlists = {}
+
+        # TODO: This while/for/if/else pattern repeats for paginated results.
+        # Consider factoring out
         while query_response:
             for item in query_response['items']:
-                playlists[item['name']] = Playlist(id=item['id'], name=item['name'], 
-                                                owner_id=item['owner']['id'])
+                playlists[item['name']] = Playlist(
+                    id=item['id'],
+                    name=item['name'],
+                    owner_id=item['owner']['id']
+                )
             if query_response['next']:
-                query_response = self._sp.next(query_response)
+                query_response = sp.next(query_response)
             else:
                 query_response = None
         return playlists
 
-    def get_playlist(self, playlist_name: str) -> Playlist:
-        playlists = self.get_playlists()
-        return playlists.get(playlist_name)
+    def _get_tracks_for_playlist(self, playlist: Playlist) -> list[Track]:
+        scope = 'playlist-read-collaborative'
+        sp = spotipy.Spotify(auth_manager=SpotifyOAuth(scope=scope))
 
+        track_fields = 'items(track(id, name, album(name, id), artists(name, id)))'
+        track_response = sp.playlist_tracks(
+            playlist_id=playlist.id, fields=track_fields, limit=100)
+        tracks = []
+        while track_response:
+            for _, item in enumerate(track_response['items']):
+                tracks.append(
+                    Track(
+                        id=item['track']['id'],
+                        name=item['track']['name'],
+                        album=Album(
+                            id=item['track']['album']['id'],
+                            name=item['track']['album']['name']
+                        ),
+                        artist=Artist(
+                            id=item['track']['artists'][0]['id'],
+                            name=item['track']['artists'][0]['name']
+                        )
+                    )
+                )
+
+            # TODO: spotipy.playlist_tracks - response does not include a 'next'.
+            # Need to determine whether this is a bug and how to handle it for
+            # playlists longer than the default limit
+
+            # if track_response['next']:
+            #     track_response = sp.next(track_response)
+            # else:
+            track_response = None
+
+        return tracks
 
     def create_playlist(self, playlist_name: str) -> Playlist:
-        scope='playlist-modify-public'
+        scope = 'playlist-modify-public'
         sp = spotipy.Spotify(auth_manager=SpotifyOAuth(scope=scope))
-        resp = sp.user_playlist_create(user=_PLAYLISTER_APP_USER_ID, name=playlist_name, public=True)
-        return resp
-    
-    def add_track_to_playlist(self, playlist_name, track_id) -> Track:
-        scope='playlist-modify-public'
+        sp.user_playlist_create(
+            user=_PLAYLISTER_APP_USER_ID, name=playlist_name, public=True)
+        
+        return self.get_playlist(playlist_name=playlist_name)
+
+    def add_tracks_to_playlist(self, playlist_name, tracks) -> Playlist:
+        scope = 'playlist-modify-public'
         sp = spotipy.Spotify(auth_manager=SpotifyOAuth(scope=scope))
 
         playlist_id = self.get_playlist(playlist_name=playlist_name).id
-        return sp.user_playlist_add_tracks(_PLAYLISTER_APP_USER_ID, playlist_id, tracks=[track_id])
+        sp.user_playlist_add_tracks(
+            _PLAYLISTER_APP_USER_ID, playlist_id, tracks=tracks)
+
+        return self.get_playlist(playlist_name=playlist_name, get_tracks=True)
 
 
 class SpotifyServiceBuilder:
@@ -87,13 +140,15 @@ class SpotifyServiceBuilder:
         if not self._instance:
             self._instance = SpotifyService()
         return self._instance
-    
+
+
 class YoutubeService(MusicService):
     def __init__(self) -> None:
         super().__init__()
 
-    def add_track_to_playlist(self, playlist, track):
+    def add_tracks_to_playlist(self, playlist_id, tracks):
         pass
+
 
 class YoutubeServiceBuilder:
     def __init__(self):
@@ -103,13 +158,15 @@ class YoutubeServiceBuilder:
         if not self._instance:
             self._instance = YoutubeService()
         return self._instance
-    
+
+
 class TidalService(MusicService):
     def __init__(self) -> None:
         super().__init__()
 
-    def add_track_to_playlist(self, playlist, track):
+    def add_tracks_to_playlist(self, playlist_id, tracks):
         pass
+
 
 class TidalServiceBuilder:
     def __init__(self):
@@ -119,7 +176,8 @@ class TidalServiceBuilder:
         if not self._instance:
             self._instance = TidalService()
         return self._instance
-    
+
+
 services = MusicServiceFactory()
 services.register_builder('SPOTIFY', SpotifyServiceBuilder())
 services.register_builder('YOUTUBE', YoutubeServiceBuilder())

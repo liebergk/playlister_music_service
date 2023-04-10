@@ -1,58 +1,60 @@
 from flask import Flask, request
 import music
+import logging
 
 app = Flask(__name__)
 
+
 @app.route("/")
 def root():
-    return ""
+    return "Hey there, listener!"
+
 
 @app.route("/services/<service_name>/playlists/<playlist_name>", methods=['GET'])
 def get_playlist_by_name(service_name: str, playlist_name: str):
     service: music.MusicService = music.services.get(service_name.upper())
-    response_code = 200
-    response_body = None
+
     try:
-        response_body = service.get_playlist(playlist_name=playlist_name)._asdict()
-        print(response_body)
+        return service.get_playlist(playlist_name=playlist_name)._asdict()
     except:
-        response_code = 500
-        response_body = "Unable to find playlist. Internal server error"
-    return response_body, response_code
+        logging.exception(msg="Error finding playlist", exc_info=True)
+        return "Unable to find playlist. Internal server error", 500
+
 
 @app.route("/services/<service_name>/playlists/<playlist_name>", methods=['POST'])
 def create_playlist(service_name: str, playlist_name):
     service: music.MusicService = music.services.get(service_name.upper())
 
-    resp = service.create_playlist(playlist_name=playlist_name)
-    return ""
+    try:
+        return service.create_playlist(playlist_name=playlist_name)._asdict()
+    except:
+        logging.exception(msg="Error creating playlist", exc_info=True)
+        return "Unable to create playlist. Internal server error", 500
 
-@app.route("/services/<service_name>/playlists/<playlist>/tracks", methods=['GET'])
-def get_songs(service_name: str, playlist):
-    
-    # scope = "playlist-read-private"
 
-    # sp = spotipy.Spotify(auth_manager=SpotifyOAuth(scope=scope))
-    # user_id = sp.current_user()['id']
+@app.route("/services/<service_name>/playlists/<playlist_name>/tracks", methods=['GET'])
+def get_tracks(service_name: str, playlist_name):
+    service: music.MusicService = music.services.get(service_name.upper())
+    try:
+        playlist = service.get_playlist(playlist_name=playlist_name, get_tracks=True)
+        tracks = playlist.tracks
+        return {'tracks': [track._asdict() for track in tracks]}
+    except:
+        logging.exception(
+            msg="Error finding playlist or tracks", exc_info=True)
+        return "Unable to find playlist or tracks. Internal server error", 500
 
-    # tracks = sp.user_playlist_tracks(user_id, playlist_id=playlist_id)
-    track_list = []
-    # while tracks:
-    #     for i, track in enumerate(tracks['items']):
-    #         track_list.append(track['track']['id'])
-    #     if tracks['next']:
-    #         tracks = sp.next(tracks)
-    #     else:
-    #         tracks = None
-    return "<p>" + '</p><p>'.join(track_list) + "</p>"
 
 @app.route("/services/<service_name>/playlists/<playlist_name>/tracks", methods=['POST'])
-def add_track_to_playlist(service_name: str, playlist_name):
-
+def add_tracks_to_playlist(service_name: str, playlist_name):
     service: music.MusicService = music.services.get(service_name.upper())
 
-    service.add_track_to_playlist(playlist_name=playlist_name, track_id=request.form['track_id'])
-    return ""
-
-
-    
+    try:
+        request_body = request.json
+        result = service.add_tracks_to_playlist(playlist_name=playlist_name,
+                                                tracks=request_body['tracks'])
+        return result._asdict()
+    except:
+        logging.exception(
+            msg="Error finding playlist or tracks", exc_info=True)
+        return "Unable to add tracks to playlist. Internal server error", 500
