@@ -43,8 +43,9 @@ class MusicService:
 
 class SpotifyService(MusicService):
 
-    def __init__(self) -> None:
+    def __init__(self, spotify_client) -> None:
         super().__init__()
+        self._sp = spotify_client or spotipy.Spotify()
 
     def get_playlist(self, playlist_name: str, get_tracks=False) -> Playlist:
         playlists = self.get_playlists()
@@ -57,13 +58,11 @@ class SpotifyService(MusicService):
     
     def get_playlists(self) -> list[Playlist]:
         scope = 'playlist-read-collaborative'
-        sp = spotipy.Spotify(auth_manager=SpotifyOAuth(scope=scope))
+        self._sp.auth_manager = SpotifyOAuth(scope=scope)
 
-        query_response = sp.user_playlists(sp.current_user()['id'])
+        query_response = self._sp.user_playlists(self._sp.current_user()['id'])
         playlists = {}
 
-        # TODO: This while/for/if/else pattern repeats for paginated results.
-        # Consider factoring out
         while query_response:
             for item in query_response['items']:
                 playlists[item['name']] = Playlist(
@@ -72,18 +71,18 @@ class SpotifyService(MusicService):
                     owner_id=item['owner']['id']
                 )
             if query_response['next']:
-                query_response = sp.next(query_response)
+                query_response = self._sp.next(query_response)
             else:
                 query_response = None
         return playlists
 
     def _get_tracks_for_playlist(self, playlist: Playlist) -> list[Track]:
         scope = 'playlist-read-collaborative'
-        sp = spotipy.Spotify(auth_manager=SpotifyOAuth(scope=scope))
+        self._sp.auth_manager = SpotifyOAuth(scope=scope)
 
         track_fields = 'items(track(id, name, album(name, id), artists(name, id)))'
-        track_response = sp.playlist_tracks(
-            playlist_id=playlist.id, fields=track_fields, limit=100)
+        track_response = self._sp.playlist_tracks(
+            playlist_id=playlist.id, fields=track_fields)
         tracks = []
         while track_response:
             for _, item in enumerate(track_response['items']):
@@ -95,6 +94,7 @@ class SpotifyService(MusicService):
                             id=item['track']['album']['id'],
                             name=item['track']['album']['name']
                         ),
+                        # TODO: Support multi-artist tracks
                         artist=Artist(
                             id=item['track']['artists'][0]['id'],
                             name=item['track']['artists'][0]['name']
@@ -107,7 +107,7 @@ class SpotifyService(MusicService):
             # playlists longer than the default limit
 
             # if track_response['next']:
-            #     track_response = sp.next(track_response)
+            #     track_response = self._sp.next(track_response)
             # else:
             track_response = None
 
@@ -115,19 +115,18 @@ class SpotifyService(MusicService):
 
     def create_playlist(self, playlist_name: str) -> Playlist:
         scope = 'playlist-modify-public'
-        sp = spotipy.Spotify(auth_manager=SpotifyOAuth(scope=scope))
-        sp.user_playlist_create(
+        self._sp.auth_manager = SpotifyOAuth(scope=scope)
+        self._sp.user_playlist_create(
             user=_PLAYLISTER_APP_USER_ID, name=playlist_name, public=True)
         
         return self.get_playlist(playlist_name=playlist_name)
 
     def add_tracks_to_playlist(self, playlist_name, tracks) -> Playlist:
         scope = 'playlist-modify-public'
-        sp = spotipy.Spotify(auth_manager=SpotifyOAuth(scope=scope))
+        self._sp.auth_manager = SpotifyOAuth(scope=scope)
 
         playlist_id = self.get_playlist(playlist_name=playlist_name).id
-        sp.user_playlist_add_tracks(
-            _PLAYLISTER_APP_USER_ID, playlist_id, tracks=tracks)
+        self._sp.user_playlist_add_tracks(user=_PLAYLISTER_APP_USER_ID, playlist_id=playlist_id, tracks=tracks)
 
         return self.get_playlist(playlist_name=playlist_name, get_tracks=True)
 
@@ -136,9 +135,9 @@ class SpotifyServiceBuilder:
     def __init__(self):
         self._instance = None
 
-    def __call__(self, **_ignored):
-        if not self._instance:
-            self._instance = SpotifyService()
+    def __call__(self, spotify_client=None, use_cached_instance=True, **_ignored):
+        if not self._instance or not use_cached_instance:
+            self._instance = SpotifyService(spotify_client)
         return self._instance
 
 
